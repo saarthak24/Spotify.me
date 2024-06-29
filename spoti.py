@@ -21,6 +21,17 @@ def get_all_saved_tracks(sp):
         tracks.extend(results['items'])
     return tracks
 
+# Legacy function for parsing through track objects
+def parse_tracks(results):
+    # TODO: Modify this function to take in an sp object
+    for item in results['items']:
+        track = item['track']
+        name = track['name']
+        albumReleaseDate = track['album']['release_date']
+        albumReleaseYear = albumReleaseDate[:4]
+        if(CURRENT_YEAR - int(albumReleaseYear) > 10):
+            print("%s (%s)" % (name, albumReleaseYear))
+
 # Helper function to be used for debugging purposes
 def show_tracks(results):
     for item in results['items']:
@@ -37,16 +48,6 @@ def get_saved_tracks_from_file(sp, filename: str):
             return
     except FileNotFoundError:
         store_all_saved_tracks(sp, filename)
-
-def parse_tracks(results):
-    # TODO: Modify this function to take in an sp object
-    for item in results['items']:
-        track = item['track']
-        name = track['name']
-        albumReleaseDate = track['album']['release_date']
-        albumReleaseYear = albumReleaseDate[:4]
-        if(CURRENT_YEAR - int(albumReleaseYear) > 10):
-            print("%s (%s)" % (name, albumReleaseYear))
 
 def check_for_playlist(sp, playlistName):
     user_playlists = sp.user_playlists(sp.me()['id'])
@@ -78,11 +79,11 @@ def create_throwback_playlist(sp, playlistName):
     if(playlistName == "Throw it back"):
         isPublic = False
         isCollaborative = False
-        playlistDesc = 'old, but not old enough to be classy (made with love using spotify.me)'
+        playlistDesc = 'all the way back shawty (made with love using spotify.me)'
     if(playlistName == "Throwback"):
         isPublic = True
         isCollaborative = False
-        playlistDesc = 'the good ol\' days (made with love using spotify.me)'
+        playlistDesc = 'to better days? (made with love using spotify.me)'
     if(playlistName == "Antiques"):
         isPublic = True
         isCollaborative = False
@@ -123,9 +124,60 @@ def populate_throwback_playlist(sp, playlistName, playlistID):
         sp.playlist_add_items(playlistID, tracksToAdd)
 
 def update_throwback_playlist(sp, playlistName, playlistID):
-    #TODO: check if any new tracks have been added to the user's saved tracks.
-        # if any of these tracks fulfil the filter restrictions for the provided throwback playlist
-            # add them to the playlist without modifying existing tracks in the playlist
+    # print("Printing full details of the tracks in playlist: %s" % playlistName)
+    # print(sp.playlist_tracks(playlistID))
+
+    playlist_details = sp.playlist_tracks(playlistID)
+    playlistTracks = playlist_details['items']
+    while playlist_details['next']:  # Continue retrieving playlist details while there is a next page
+        playlist_details = sp.next(playlist_details)
+        playlistTracks.extend(playlist_details['items'])
+
+    # Store the URI of each track in the playlist in a set
+    playlistTrackURIs = set()
+    for item in playlistTracks:
+        track = item['track']
+        uri = track['uri']
+        name = track['name']
+        print(name)
+        playlistTrackURIs.add(uri)
+    print(len(playlistTrackURIs))
+
+    tracksToAdd = []
+    # Get all of the users saved tracks
+    allSavedTracks = get_all_saved_tracks(sp)
+
+    for item in allSavedTracks:
+        track = item['track']
+        uri = track['uri']
+        name = track['name']
+        albumReleaseDate = track['album']['release_date']
+        albumReleaseYear = albumReleaseDate[:4]
+
+        # If a track is found whose URI is already in playlistTrackURIs
+        if uri in playlistTrackURIs:
+            break
+
+        # Throw it back (10+ years ago)
+        elif playlistName == "Throw it back" and (CURRENT_YEAR - int(albumReleaseYear) > 10):
+            print(f"{name} ({albumReleaseYear})")
+            tracksToAdd.insert(0, uri)
+        # Throwback (20+ years ago)
+        elif playlistName == "Throwback" and (CURRENT_YEAR - int(albumReleaseYear) > 20):
+            print(f"{name} ({albumReleaseYear})")
+            tracksToAdd.insert(0, uri)
+        # Antiques (Before the year 2000)
+        elif playlistName == "Antiques" and (int(albumReleaseYear) < 2000):
+            print(f"{name} ({albumReleaseYear})")
+            tracksToAdd.insert(0, uri)
+
+    # Add the filtered tracks list (tracksToAdd) to the playlist with the provided playlistID
+    while(len(tracksToAdd) > 100): # A maximum of 100 items/tracks can be added in one request.
+        sp.playlist_add_items(playlistID, tracksToAdd[0:100])
+        tracksToAdd = tracksToAdd[100:]
+    if(tracksToAdd): # Add remaining items/tracks, if any
+        sp.playlist_add_items(playlistID, tracksToAdd)
+
     return
 
 def main():
@@ -138,7 +190,7 @@ def main():
     created = check_for_playlist(sp, playlistToCreate)
     # if the playlist already exists, update it as necessary
     if created:
-        print(created)
+        print(created, end="\n\n")
         update_throwback_playlist(sp, playlistToCreate, created)
         return
     # if the playlist does not exist, create it and then populate it
